@@ -5,8 +5,7 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { createError } from "../utils/errorResponse";
 
 // @desc    Search events with advanced filters
-// @route   GET /api/search/events
-// @access  Public
+
 export const searchEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const {
@@ -30,10 +29,10 @@ export const searchEvents = asyncHandler(
     const limitNum = parseInt(limit as string);
     const skip = (pageNum - 1) * limitNum;
 
-    // Build filter object
+   
     const filter: any = {};
 
-    // Keyword search in title and description
+
     if (keyword) {
       filter.$or = [
         { title: { $regex: keyword, $options: "i" } },
@@ -82,7 +81,7 @@ export const searchEvents = asyncHandler(
         filter.currentParticipants.$lte = parseInt(maxParticipants as string);
     }
 
-    // Status filter - only show open events by default
+    // Status filter 
     if (!req.query.status) {
       filter.status = "open";
     } else if (req.query.status !== "all") {
@@ -110,7 +109,7 @@ export const searchEvents = asyncHandler(
           sort.createdAt = -1;
       }
     } else {
-      sort.date = 1; // Sort by upcoming events by default
+      sort.date = 1; 
     }
 
     // Execute query
@@ -147,9 +146,8 @@ export const searchEvents = asyncHandler(
   }
 );
 
-// @desc    Get events near location
-// @route   GET /api/search/nearby
-// @access  Public
+// desc    Get events near location
+
 export const getNearbyEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const { location, radius = "10" } = req.query;
@@ -158,7 +156,7 @@ export const getNearbyEvents = asyncHandler(
       throw createError("Location is required", 400);
     }
 
-    // This is a simplified version - in production, use geospatial queries
+    
     const events = await Event.find({
       location: { $regex: location, $options: "i" },
       status: "open",
@@ -175,12 +173,11 @@ export const getNearbyEvents = asyncHandler(
   }
 );
 
-// @desc    Get trending events
-// @route   GET /api/search/trending
-// @access  Public
+// desc    Get trending events
+
 export const getTrendingEvents = asyncHandler(
   async (req: Request, res: Response) => {
-    // Get events with most participants in last 7 days
+    
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -199,9 +196,8 @@ export const getTrendingEvents = asyncHandler(
   }
 );
 
-// @desc    Get events by interests
-// @route   GET /api/search/interests
-// @access  Private
+// desc    Get events by interests
+
 export const getEventsByInterests = asyncHandler(
   async (req: Request, res: Response) => {
     const user = await User.findById((req as any).user.userId);
@@ -213,7 +209,7 @@ export const getEventsByInterests = asyncHandler(
       });
     }
 
-    // Find events matching user interests
+    
     const events = await Event.find({
       $or: [
         { tags: { $in: user.interests } },
@@ -233,9 +229,8 @@ export const getEventsByInterests = asyncHandler(
   }
 );
 
-// @desc    Get event statistics
-// @route   GET /api/search/stats
-// @access  Public
+// desc    Get event statistics
+
 export const getEventStats = asyncHandler(
   async (req: Request, res: Response) => {
     const totalEvents = await Event.countDocuments();
