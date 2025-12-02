@@ -2,13 +2,13 @@ import express from "express";
 import cors from "cors";
 import authRoutes from "./auth/authRoute";
 import userRoutes from "./user/userRoute";
-
+import eventRoutes from "./events/eventRoute";
+import searchRoutes from "./events/eventRoute";
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
-
 
 app.get("/", (req, res) => {
   res.send(`
@@ -20,8 +20,10 @@ app.get("/", (req, res) => {
 // routes
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/events", eventRoutes);
+app.use("/api/search", searchRoutes);
 
-// 404 handler 
+// 404 handler
 app.use((req, res) => {
   res.status(404).json({
     success: false,
