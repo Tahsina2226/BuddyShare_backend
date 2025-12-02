@@ -21,97 +21,50 @@ export interface IUser extends Document {
 // User Schema
 const userSchema = new Schema<IUser>(
   {
-    name: {
-      type: String,
-      required: [true, "Name is required"],
-      trim: true,
-      maxlength: [50, "Name cannot be more than 50 characters"],
-    },
+    name: { type: String, required: true, trim: true, maxlength: 50 },
     email: {
       type: String,
-      required: [true, "Email is required"],
+      required: true,
       unique: true,
       lowercase: true,
-      match: [
-        /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/,
-        "Please enter a valid email",
-      ],
+      match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Invalid email"],
     },
-    password: {
-      type: String,
-      required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters"],
-      select: false,
-    },
-    role: {
-      type: String,
-      enum: ["user", "host", "admin"],
-      default: "user",
-    },
-    avatar: {
-      type: String,
-      default: "",
-    },
-    bio: {
-      type: String,
-      maxlength: [500, "Bio cannot be more than 500 characters"],
-      default: "",
-    },
-    interests: [
-      {
-        type: String,
-        trim: true,
-      },
-    ],
-    location: {
-      type: String,
-      required: [true, "Location is required"],
-      trim: true,
-    },
-    isVerified: {
-      type: Boolean,
-      default: false,
-    },
+    password: { type: String, required: true, minlength: 6, select: false },
+    role: { type: String, enum: ["user", "host", "admin"], default: "user" },
+    avatar: { type: String, default: "" },
+    bio: { type: String, maxlength: 500, default: "" },
+    interests: [{ type: String, trim: true }],
+    location: { type: String, required: true, trim: true },
+    isVerified: { type: Boolean, default: false },
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
-
+// Indexes
 userSchema.index({ email: 1 });
 userSchema.index({ location: 1 });
 userSchema.index({ interests: 1 });
 
-//  hash password 
-(userSchema.pre as any)(
-  "save",
-  async function (this: IUser, next: (err?: any) => void) {
-    if (!this.isModified("password")) return next();
+// Pre-save hook (password hashing)
+userSchema.pre<IUser>("save", async function () {
+  if (!this.isModified("password")) return;
 
-    try {
-      const salt = await bcrypt.genSalt(12);
-      this.password = await bcrypt.hash(this.password, salt);
-      next();
-    } catch (error) {
-      next(error);
-    }
-  }
-);
+  const salt = await bcrypt.genSalt(12);
+  this.password = await bcrypt.hash(this.password, salt);
+});
 
-// Compare password 
+// Compare password method
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
-): Promise<boolean> {
+) {
   return bcrypt.compare(candidatePassword, this.password);
 };
 
-// Remove password 
+// Remove password from JSON response
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;
 };
-
 
 export default mongoose.model<IUser>("User", userSchema);
