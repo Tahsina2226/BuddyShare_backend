@@ -4,9 +4,6 @@ import User from "../user/user";
 import { asyncHandler } from "../utils/asyncHandler";
 import { createError } from "../utils/errorResponse";
 
-// @desc    Create new event
-// @route   POST /api/events
-// @access  Private/Host
 export const createEvent = asyncHandler(async (req: Request, res: Response) => {
   const {
     title,
@@ -53,9 +50,8 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// @desc    Get all events
-// @route   GET /api/events
-// @access  Public
+// desc    Get all events
+
 export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
@@ -112,9 +108,8 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// @desc    Get single event
-// @route   GET /api/events/:id
-// @access  Public
+// desc    Get single event
+
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id)
     .populate("host", "name email avatar bio location")
@@ -130,9 +125,8 @@ export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// @desc    Update event
-// @route   PUT /api/events/:id
-// @access  Private/Host
+// desc    Update event
+
 export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
   let event = await Event.findById(req.params.id);
 
@@ -161,9 +155,8 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// @desc    Delete event
-// @route   DELETE /api/events/:id
-// @access  Private/Host/Admin
+// desc    Delete event
+
 export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id);
 
@@ -188,9 +181,8 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// @desc    Get events by host
-// @route   GET /api/events/host/:hostId
-// @access  Public
+// desc    Get events by host
+
 export const getEventsByHost = asyncHandler(
   async (req: Request, res: Response) => {
     const events = await Event.find({ host: req.params.hostId })
@@ -204,9 +196,8 @@ export const getEventsByHost = asyncHandler(
   }
 );
 
-// @desc    Get user's joined events
-// @route   GET /api/events/joined
-// @access  Private
+// desc    Get user's joined events
+
 export const getJoinedEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const events = await Event.find({ participants: (req as any).user.userId })
@@ -220,9 +211,8 @@ export const getJoinedEvents = asyncHandler(
   }
 );
 
-// @desc    Get events created by current user
-// @route   GET /api/events/my-events
-// @access  Private/Host
+// desc    Get events created by current user
+
 export const getMyEvents = asyncHandler(async (req: Request, res: Response) => {
   const events = await Event.find({ host: (req as any).user.userId })
     .populate("participants", "name avatar")
