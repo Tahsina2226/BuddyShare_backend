@@ -4,8 +4,13 @@ import User from "../user/user";
 import { asyncHandler } from "../utils/asyncHandler";
 import { createError } from "../utils/errorResponse";
 
-// @desc    Search events with advanced filters
+const getQueryString = (value: any): string | undefined => {
+  if (!value) return undefined;
+  if (Array.isArray(value)) return value[0] as string;
+  return value as string;
+};
 
+// @desc    Search events with advanced filters
 export const searchEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const {
@@ -25,74 +30,87 @@ export const searchEvents = asyncHandler(
       limit = "12",
     } = req.query;
 
-    const pageNum = parseInt(page as string);
-    const limitNum = parseInt(limit as string);
+    const pageNum = parseInt(getQueryString(page) || "1");
+    const limitNum = parseInt(getQueryString(limit) || "12");
     const skip = (pageNum - 1) * limitNum;
 
-   
     const filter: any = {};
 
-
-    if (keyword) {
+    // Keyword filter
+    const keywordStr = getQueryString(keyword);
+    if (keywordStr) {
       filter.$or = [
-        { title: { $regex: keyword, $options: "i" } },
-        { description: { $regex: keyword, $options: "i" } },
-        { tags: { $in: [new RegExp(keyword as string, "i")] } },
+        { title: { $regex: keywordStr, $options: "i" } },
+        { description: { $regex: keywordStr, $options: "i" } },
+        { tags: { $in: [new RegExp(keywordStr, "i")] } },
       ];
     }
 
     // Category filter
-    if (category) {
-      filter.category = category;
+    const categoryStr = getQueryString(category);
+    if (categoryStr) {
+      filter.category = categoryStr;
     }
 
     // Event type filter
-    if (eventType) {
-      filter.eventType = eventType;
+    const eventTypeStr = getQueryString(eventType);
+    if (eventTypeStr) {
+      filter.eventType = eventTypeStr;
     }
 
     // Location filter
-    if (location) {
-      filter.location = { $regex: location, $options: "i" };
+    const locationStr = getQueryString(location);
+    if (locationStr) {
+      filter.location = { $regex: locationStr, $options: "i" };
     }
 
     // Date range filter
-    if (dateFrom || dateTo) {
+    const dateFromStr = getQueryString(dateFrom);
+    const dateToStr = getQueryString(dateTo);
+    if (dateFromStr || dateToStr) {
       filter.date = {};
-      if (dateFrom) filter.date.$gte = new Date(dateFrom as string);
-      if (dateTo) filter.date.$lte = new Date(dateTo as string);
+      if (dateFromStr) filter.date.$gte = new Date(dateFromStr);
+      if (dateToStr) filter.date.$lte = new Date(dateToStr);
     }
 
     // Fee range filter
-    if (minFee !== undefined || maxFee !== undefined) {
+    const minFeeStr = getQueryString(minFee);
+    const maxFeeStr = getQueryString(maxFee);
+    if (minFeeStr !== undefined || maxFeeStr !== undefined) {
       filter.joiningFee = {};
-      if (minFee !== undefined)
-        filter.joiningFee.$gte = parseFloat(minFee as string);
-      if (maxFee !== undefined)
-        filter.joiningFee.$lte = parseFloat(maxFee as string);
+      if (minFeeStr !== undefined)
+        filter.joiningFee.$gte = parseFloat(minFeeStr);
+      if (maxFeeStr !== undefined)
+        filter.joiningFee.$lte = parseFloat(maxFeeStr);
     }
 
     // Participants range filter
-    if (minParticipants !== undefined || maxParticipants !== undefined) {
+    const minParticipantsStr = getQueryString(minParticipants);
+    const maxParticipantsStr = getQueryString(maxParticipants);
+    if (minParticipantsStr !== undefined || maxParticipantsStr !== undefined) {
       filter.currentParticipants = {};
-      if (minParticipants !== undefined)
-        filter.currentParticipants.$gte = parseInt(minParticipants as string);
-      if (maxParticipants !== undefined)
-        filter.currentParticipants.$lte = parseInt(maxParticipants as string);
+      if (minParticipantsStr !== undefined)
+        filter.currentParticipants.$gte = parseInt(minParticipantsStr);
+      if (maxParticipantsStr !== undefined)
+        filter.currentParticipants.$lte = parseInt(maxParticipantsStr);
     }
 
-    // Status filter 
-    if (!req.query.status) {
+    // Status filter
+    const statusStr = getQueryString(req.query.status);
+    if (!statusStr) {
       filter.status = "open";
-    } else if (req.query.status !== "all") {
-      filter.status = req.query.status;
+    } else if (statusStr !== "all") {
+      filter.status = statusStr;
     }
 
     // Build sort object
     let sort: any = {};
-    if (sortBy) {
-      const order = sortOrder === "desc" ? -1 : 1;
-      switch (sortBy) {
+    const sortByStr = getQueryString(sortBy);
+    const sortOrderStr = getQueryString(sortOrder);
+
+    if (sortByStr) {
+      const order = sortOrderStr === "desc" ? -1 : 1;
+      switch (sortByStr) {
         case "date":
           sort.date = order;
           break;
@@ -109,7 +127,7 @@ export const searchEvents = asyncHandler(
           sort.createdAt = -1;
       }
     } else {
-      sort.date = 1; 
+      sort.date = 1;
     }
 
     // Execute query
@@ -146,19 +164,18 @@ export const searchEvents = asyncHandler(
   }
 );
 
-// desc    Get events near location
-
+// @desc    Get events near location
 export const getNearbyEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const { location, radius = "10" } = req.query;
 
-    if (!location) {
+    const locationStr = getQueryString(location);
+    if (!locationStr) {
       throw createError("Location is required", 400);
     }
 
-    
     const events = await Event.find({
-      location: { $regex: location, $options: "i" },
+      location: { $regex: locationStr, $options: "i" },
       status: "open",
       date: { $gte: new Date() },
     })
@@ -173,11 +190,9 @@ export const getNearbyEvents = asyncHandler(
   }
 );
 
-// desc    Get trending events
-
+// @desc    Get trending events
 export const getTrendingEvents = asyncHandler(
   async (req: Request, res: Response) => {
-    
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
@@ -196,8 +211,7 @@ export const getTrendingEvents = asyncHandler(
   }
 );
 
-// desc    Get events by interests
-
+// @desc    Get events by interests
 export const getEventsByInterests = asyncHandler(
   async (req: Request, res: Response) => {
     const user = await User.findById((req as any).user.userId);
@@ -209,7 +223,6 @@ export const getEventsByInterests = asyncHandler(
       });
     }
 
-    
     const events = await Event.find({
       $or: [
         { tags: { $in: user.interests } },
@@ -229,8 +242,7 @@ export const getEventsByInterests = asyncHandler(
   }
 );
 
-// desc    Get event statistics
-
+// @desc    Get event statistics
 export const getEventStats = asyncHandler(
   async (req: Request, res: Response) => {
     const totalEvents = await Event.countDocuments();
@@ -238,10 +250,16 @@ export const getEventStats = asyncHandler(
       status: "open",
       date: { $gte: new Date() },
     });
+
+    // Get start and end of today
+    const today = new Date();
+    const startOfDay = new Date(today.setHours(0, 0, 0, 0));
+    const endOfDay = new Date(today.setHours(23, 59, 59, 999));
+
     const eventsToday = await Event.countDocuments({
       date: {
-        $gte: new Date().setHours(0, 0, 0, 0),
-        $lt: new Date().setHours(23, 59, 59, 999),
+        $gte: startOfDay,
+        $lte: endOfDay,
       },
     });
 

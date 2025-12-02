@@ -3,7 +3,7 @@ import cors from "cors";
 import authRoutes from "./auth/authRoute";
 import userRoutes from "./user/userRoute";
 import eventRoutes from "./events/eventRoute";
-import searchRoutes from "./events/eventRoute";
+import searchRoutes from "./events/searchRoute";
 const app = express();
 
 // Middleware
