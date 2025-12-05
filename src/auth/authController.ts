@@ -2,9 +2,16 @@ import { Request, Response } from "express";
 import User from "../user/user";
 import { generateToken } from "../utils/generateToken";
 import { asyncHandler } from "../utils/asyncHandler";
+import { AuthRequest } from "../middleware/auth"; // strongly typed request
 
+// Register user
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password, role, location } = req.body;
+
+  if (!name || !email || !password) {
+    res.status(400);
+    throw new Error("Please provide name, email, and password");
+  }
 
   const userExists = await User.findOne({ email });
   if (userExists) {
@@ -21,35 +28,20 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
     interests: req.body.interests || [],
   });
 
-  if (user) {
-    const token = generateToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
+  const token = generateToken({
+    userId: user._id.toString(),
+    email: user.email,
+    role: user.role,
+  });
 
-    res.status(201).json({
-      success: true,
-      message: "User registered successfully",
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          avatar: user.avatar,
-          location: user.location,
-          interests: user.interests,
-        },
-        token,
-      },
-    });
-  } else {
-    res.status(400);
-    throw new Error("Invalid user data");
-  }
+  res.status(201).json({
+    success: true,
+    message: "User registered successfully",
+    data: { user, token },
+  });
 });
 
+// Login user
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -59,99 +51,67 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const user = await User.findOne({ email }).select("+password");
-
-  if (user && (await user.comparePassword(password))) {
-    const token = generateToken({
-      userId: user._id.toString(),
-      email: user.email,
-      role: user.role,
-    });
-
-    res.json({
-      success: true,
-      message: "Login successful",
-      data: {
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          avatar: user.avatar,
-          location: user.location,
-          interests: user.interests,
-          bio: user.bio,
-        },
-        token,
-      },
-    });
-  } else {
+  if (!user || !(await user.comparePassword(password))) {
     res.status(401);
     throw new Error("Invalid email or password");
   }
+
+  const token = generateToken({
+    userId: user._id.toString(),
+    email: user.email,
+    role: user.role,
+  });
+
+  res.json({
+    success: true,
+    message: "Login successful",
+    data: { user, token },
+  });
 });
 
-export const getMe = asyncHandler(async (req: Request, res: Response) => {
-  const user = await User.findById((req as any).user.userId);
+// Get logged-in user info
+export const getMe = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(401);
+    throw new Error("Not authorized");
+  }
 
+  const user = await User.findById(req.user.userId);
   if (!user) {
     res.status(404);
     throw new Error("User not found");
   }
 
-  res.json({
-    success: true,
-    data: {
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        location: user.location,
-        interests: user.interests,
-        bio: user.bio,
-        isVerified: user.isVerified,
-        createdAt: user.createdAt,
-      },
-    },
-  });
+  res.json({ success: true, data: user });
 });
 
+// Update profile
 export const updateProfile = asyncHandler(
-  async (req: Request, res: Response) => {
-    const user = await User.findById((req as any).user.userId);
+  async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      res.status(401);
+      throw new Error("Not authorized");
+    }
 
+    const user = await User.findById(req.user.userId);
     if (!user) {
       res.status(404);
       throw new Error("User not found");
     }
 
     const { name, bio, location, interests, avatar } = req.body;
+    user.name = name ?? user.name;
+    user.bio = bio ?? user.bio;
+    user.location = location ?? user.location;
+    user.interests = interests ?? user.interests;
+    user.avatar = avatar ?? user.avatar;
 
-    user.name = name || user.name;
-    user.bio = bio || user.bio;
-    user.location = location || user.location;
-    user.interests = interests || user.interests;
-    user.avatar = avatar || user.avatar;
-
-    const updatedUser = await user.save();
+    await user.save();
 
     res.json({
       success: true,
       message: "Profile updated successfully",
-      data: {
-        user: {
-          id: updatedUser._id,
-          name: updatedUser.name,
-          email: updatedUser.email,
-          role: updatedUser.role,
-          avatar: updatedUser.avatar,
-          location: updatedUser.location,
-          interests: updatedUser.interests,
-          bio: updatedUser.bio,
-          isVerified: updatedUser.isVerified,
-        },
-      },
+      data: user,
     });
   }
 );

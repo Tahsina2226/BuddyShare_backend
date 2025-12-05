@@ -1,13 +1,14 @@
 import jwt, { SignOptions } from "jsonwebtoken";
 
-interface TokenPayload {
+// ✅ Export the interface
+export interface TokenPayload {
   userId: string;
   email: string;
   role: string;
 }
 
 export const generateToken = (payload: TokenPayload): string => {
-  const expiresIn: string = process.env.JWT_EXPIRE || "24h"; 
+  const expiresIn: string = process.env.JWT_EXPIRE || "24h";
 
   const options: SignOptions = {
     expiresIn: expiresIn as jwt.SignOptions["expiresIn"],

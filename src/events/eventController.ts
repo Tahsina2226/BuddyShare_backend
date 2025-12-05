@@ -3,6 +3,96 @@ import Event from "./event";
 import User from "../user/user";
 import { asyncHandler } from "../utils/asyncHandler";
 import { createError } from "../utils/errorResponse";
+import multer, { FileFilterCallback } from "multer";
+import path from "path";
+import fs from "fs";
+
+const storage = multer.diskStorage({
+  destination: (
+    req: Express.Request,
+    file: Express.Multer.File,
+    cb: (error: Error | null, destination: string) => void
+  ) => {
+    const uploadPath = path.join(process.cwd(), "uploads/events");
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: (
+    req: Express.Request,
+    file: Express.Multer.File,
+    cb: (error: Error | null, filename: string) => void
+  ) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "event-" + uniqueSuffix + path.extname(file.originalname));
+  },
+});
+
+const fileFilter = (
+  req: Express.Request,
+  file: Express.Multer.File,
+  cb: FileFilterCallback
+) => {
+  const allowedTypes = /jpeg|jpg|png|webp|gif/;
+  const extname = allowedTypes.test(
+    path.extname(file.originalname).toLowerCase()
+  );
+  const mimetype = allowedTypes.test(file.mimetype);
+
+  if (mimetype && extname) {
+    return cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed"));
+  }
+};
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter: fileFilter,
+});
+
+export const uploadEventImage = upload.single("image");
+
+// Helper function to get full URL
+const getFullUrl = (req: Request, path: string): string => {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+  if (path.startsWith("/")) {
+    return `${req.protocol}://${req.get("host")}${path}`;
+  }
+  return path;
+};
+
+// Helper function to transform event with full URLs
+const transformEventWithFullUrls = (req: Request, event: any) => {
+  const eventObj = event.toObject ? event.toObject() : event;
+  return {
+    ...eventObj,
+    image: getFullUrl(req, eventObj.image),
+    // Transform nested populated data if needed
+    host:
+      eventObj.host && typeof eventObj.host === "object"
+        ? {
+            ...eventObj.host,
+            avatar: getFullUrl(req, eventObj.host?.avatar || ""),
+          }
+        : eventObj.host,
+    participants:
+      eventObj.participants?.map((participant: any) =>
+        participant && typeof participant === "object"
+          ? {
+              ...participant,
+              avatar: getFullUrl(req, participant.avatar || ""),
+            }
+          : participant
+      ) || [],
+  };
+};
 
 export const createEvent = asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -17,15 +107,21 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
     joiningFee,
     category,
     tags,
+    image: imageUrl,
   } = req.body;
 
-  // Check if user is host or admin
   const user = await User.findById((req as any).user.userId);
   if (!["host", "admin"].includes(user!.role)) {
     throw createError("Only hosts can create events", 403);
   }
 
-  // Create event
+  let image = imageUrl;
+  if (req.file) {
+    const imagePath = `/uploads/events/${req.file.filename}`;
+    // Store full URL in database
+    image = `${req.protocol}://${req.get("host")}${imagePath}`;
+  }
+
   const event = await Event.create({
     title,
     description,
@@ -35,29 +131,35 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
     location,
     address,
     host: (req as any).user.userId,
+    hostName: user!.name,
+    hostEmail: user!.email,
     maxParticipants: parseInt(maxParticipants),
     currentParticipants: 0,
     joiningFee: parseFloat(joiningFee) || 0,
     category,
-    tags: tags || [],
+    tags: tags
+      ? Array.isArray(tags)
+        ? tags
+        : tags.split(",").map((t: string) => t.trim())
+      : [],
+    image,
     status: "open",
   });
+
+  const eventWithFullUrls = transformEventWithFullUrls(req, event);
 
   res.status(201).json({
     success: true,
     message: "Event created successfully",
-    data: { event },
+    data: { event: eventWithFullUrls },
   });
 });
-
-// desc    Get all events
 
 export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
 
-  // Filtering
   const filter: any = {};
 
   if (req.query.category) filter.category = req.query.category;
@@ -66,7 +168,6 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
     filter.location = { $regex: req.query.location, $options: "i" };
   if (req.query.status) filter.status = req.query.status;
 
-  // Date filtering
   if (req.query.dateFrom) {
     filter.date = {
       ...filter.date,
@@ -80,7 +181,6 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
     };
   }
 
-  // Sorting
   const sort: any = {};
   if (req.query.sortBy === "date") sort.date = 1;
   if (req.query.sortBy === "participants") sort.currentParticipants = -1;
@@ -94,10 +194,14 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
 
   const total = await Event.countDocuments(filter);
 
+  const eventsWithFullUrls = events.map((event) =>
+    transformEventWithFullUrls(req, event)
+  );
+
   res.json({
     success: true,
     data: {
-      events,
+      events: eventsWithFullUrls,
       pagination: {
         page,
         limit,
@@ -108,8 +212,6 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// desc    Get single event
-
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id)
     .populate("host", "name email avatar bio location")
@@ -119,13 +221,13 @@ export const getEvent = asyncHandler(async (req: Request, res: Response) => {
     throw createError("Event not found", 404);
   }
 
+  const eventWithFullUrls = transformEventWithFullUrls(req, event);
+
   res.json({
     success: true,
-    data: { event },
+    data: { event: eventWithFullUrls },
   });
 });
-
-// desc    Update event
 
 export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
   let event = await Event.findById(req.params.id);
@@ -134,7 +236,6 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
     throw createError("Event not found", 404);
   }
 
-  // Check if user is event host or admin
   if (
     event.host.toString() !== (req as any).user.userId &&
     (req as any).user.role !== "admin"
@@ -142,20 +243,60 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
     throw createError("Not authorized to update this event", 403);
   }
 
-  // Update event
-  event = await Event.findByIdAndUpdate(req.params.id, req.body, {
+  let image = req.body.image;
+  if (req.file) {
+    const imagePath = `/uploads/events/${req.file.filename}`;
+    image = `${req.protocol}://${req.get("host")}${imagePath}`;
+
+    // Delete old image if it's a local upload
+    if (event.image && event.image.includes("/uploads/events/")) {
+      try {
+        // Extract the filename from the full URL
+        const oldImageFilename = event.image.split("/").pop();
+        const oldImagePath = path.join(
+          process.cwd(),
+          "uploads/events",
+          oldImageFilename || ""
+        );
+        if (fs.existsSync(oldImagePath)) {
+          fs.unlinkSync(oldImagePath);
+        }
+      } catch (error) {
+        console.error("Error deleting old image:", error);
+      }
+    }
+  }
+
+  const updateData = {
+    ...req.body,
+    ...(image && { image }),
+    ...(req.body.tags && {
+      tags: Array.isArray(req.body.tags)
+        ? req.body.tags
+        : req.body.tags.split(",").map((t: string) => t.trim()),
+    }),
+  };
+
+  if (req.body.maxParticipants) {
+    updateData.maxParticipants = parseInt(req.body.maxParticipants);
+  }
+  if (req.body.joiningFee) {
+    updateData.joiningFee = parseFloat(req.body.joiningFee);
+  }
+
+  event = await Event.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true,
   }).populate("host", "name email avatar");
 
+  const eventWithFullUrls = transformEventWithFullUrls(req, event);
+
   res.json({
     success: true,
     message: "Event updated successfully",
-    data: { event },
+    data: { event: eventWithFullUrls },
   });
 });
-
-// desc    Delete event
 
 export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id);
@@ -164,12 +305,28 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
     throw createError("Event not found", 404);
   }
 
-  // Check if user is event host or admin
   if (
     event.host.toString() !== (req as any).user.userId &&
     (req as any).user.role !== "admin"
   ) {
     throw createError("Not authorized to delete this event", 403);
+  }
+
+  // Delete associated image
+  if (event.image && event.image.includes("/uploads/events/")) {
+    try {
+      const imageFilename = event.image.split("/").pop();
+      const imagePath = path.join(
+        process.cwd(),
+        "uploads/events",
+        imageFilename || ""
+      );
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+      }
+    } catch (error) {
+      console.error("Error deleting image:", error);
+    }
   }
 
   await Event.findByIdAndDelete(req.params.id);
@@ -181,22 +338,22 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// desc    Get events by host
-
 export const getEventsByHost = asyncHandler(
   async (req: Request, res: Response) => {
     const events = await Event.find({ host: req.params.hostId })
       .populate("host", "name avatar")
       .sort({ date: 1 });
 
+    const eventsWithFullUrls = events.map((event) =>
+      transformEventWithFullUrls(req, event)
+    );
+
     res.json({
       success: true,
-      data: { events },
+      data: { events: eventsWithFullUrls },
     });
   }
 );
-
-// desc    Get user's joined events
 
 export const getJoinedEvents = asyncHandler(
   async (req: Request, res: Response) => {
@@ -204,22 +361,49 @@ export const getJoinedEvents = asyncHandler(
       .populate("host", "name avatar")
       .sort({ date: 1 });
 
+    const eventsWithFullUrls = events.map((event) =>
+      transformEventWithFullUrls(req, event)
+    );
+
     res.json({
       success: true,
-      data: { events },
+      data: { events: eventsWithFullUrls },
     });
   }
 );
-
-// desc    Get events created by current user
 
 export const getMyEvents = asyncHandler(async (req: Request, res: Response) => {
   const events = await Event.find({ host: (req as any).user.userId })
     .populate("participants", "name avatar")
     .sort({ createdAt: -1 });
 
+  const eventsWithFullUrls = events.map((event) =>
+    transformEventWithFullUrls(req, event)
+  );
+
   res.json({
     success: true,
-    data: { events },
+    data: { events: eventsWithFullUrls },
+  });
+});
+
+export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.file) {
+    throw createError("No image uploaded", 400);
+  }
+
+  const imagePath = `/uploads/events/${req.file.filename}`;
+  const fullUrl = `${req.protocol}://${req.get("host")}${imagePath}`;
+
+  res.json({
+    success: true,
+    message: "Image uploaded successfully",
+    data: {
+      url: imagePath,
+      fullUrl: fullUrl,
+      filename: req.file.filename,
+      size: req.file.size,
+      mimetype: req.file.mimetype,
+    },
   });
 });
