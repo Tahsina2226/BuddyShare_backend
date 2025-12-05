@@ -1,55 +1,88 @@
-import express from "express";
+import express, { Request, Response, NextFunction } from "express";
 import cors from "cors";
+import path from "path";
 import authRoutes from "./auth/authRoute";
 import userRoutes from "./user/userRoute";
 import eventRoutes from "./events/eventRoute";
 import searchRoutes from "./events/searchRoute";
+
 const app = express();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+
+app.get("/", (req: Request, res: Response) => {
   res.send(`
     <h1>BuddyShare API</h1>
     <p>Welcome to your Events & Activities Backend</p>
+    <p>Image upload is available at: /api/events/upload-image</p>
+    <p>Static files served from: ${path.join(process.cwd(), 'uploads')}</p>
   `);
 });
 
-// routes
+app.get("/api/health", (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+    uploadsPath: path.join(process.cwd(), 'uploads')
+  });
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/search", searchRoutes);
 
-// 404 handler
-app.use((req, res) => {
+app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
     message: `Route ${req.originalUrl} not found`,
   });
 });
 
-// Global error handler
-app.use(
-  (
-    err: any,
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction
-  ) => {
-    console.error("🔥 Error:", err.stack);
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+  console.error("🔥 Error:", err.message);
+  console.error(err.stack);
 
-    const statusCode = err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
-
-    res.status(statusCode).json({
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({
+        success: false,
+        message: 'File size is too large. Maximum size is 5MB'
+      });
+    }
+    if (err.code === 'LIMIT_FILE_COUNT') {
+      return res.status(400).json({
+        success: false,
+        message: 'Too many files. Only one file is allowed'
+      });
+    }
+    return res.status(400).json({
       success: false,
-      message,
-      ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+      message: `File upload error: ${err.message}`
     });
   }
-);
+
+  if (err.code === 'ENOENT') {
+    return res.status(404).json({
+      success: false,
+      message: 'File not found'
+    });
+  }
+
+  const statusCode = err.statusCode || 500;
+  const message = err.message || "Internal Server Error";
+
+  res.status(statusCode).json({
+    success: false,
+    message,
+    ...(process.env.NODE_ENV === "development" && { stack: err.stack }),
+  });
+});
 
 export default app;
