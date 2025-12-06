@@ -121,12 +121,16 @@ const eventSchema = new Schema<IEvent>(
       type: String,
       default: "",
       validate: {
-        validator: function(v: string) {
+        validator: function (v: string) {
           if (!v) return true;
-          return v.startsWith('http') || v.startsWith('/uploads/') || v.startsWith('data:image');
+          return (
+            v.startsWith("http") ||
+            v.startsWith("/uploads/") ||
+            v.startsWith("data:image")
+          );
         },
-        message: 'Image must be a valid URL or base64 data URI'
-      }
+        message: "Image must be a valid URL or base64 data URI",
+      },
     },
     status: {
       type: String,
@@ -142,11 +146,15 @@ const eventSchema = new Schema<IEvent>(
         "Sports",
         "Education",
         "Food",
+        "Food & Drink",
         "Travel",
         "Art",
+        "Art & Culture",
         "Technology",
+        "Tech",
         "Business",
         "Health",
+        "Wellness",
         "Charity",
         "Social",
         "Fitness",
@@ -198,21 +206,24 @@ eventSchema.virtual("isPast").get(function () {
 });
 
 eventSchema.virtual("formattedDate").get(function () {
-  return this.date.toISOString().split('T')[0];
+  return this.date.toISOString().split("T")[0];
 });
 
 eventSchema.virtual("formattedTime").get(function () {
-  const [hours, minutes] = this.time.split(':');
+  const [hours, minutes] = this.time.split(":");
   const hour = parseInt(hours);
-  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const ampm = hour >= 12 ? "PM" : "AM";
   const formattedHour = hour % 12 || 12;
   return `${formattedHour}:${minutes} ${ampm}`;
 });
 
-eventSchema.pre("save", async function() {
+eventSchema.pre("save", async function () {
   if (this.currentParticipants >= this.maxParticipants) {
     this.status = "full";
-  } else if (this.status === "full" && this.currentParticipants < this.maxParticipants) {
+  } else if (
+    this.status === "full" &&
+    this.currentParticipants < this.maxParticipants
+  ) {
     this.status = "open";
   }
 
@@ -223,22 +234,28 @@ eventSchema.pre("save", async function() {
   }
 
   if (this.tags && this.tags.length > 0) {
-    this.tags = this.tags.map(tag => tag.toLowerCase().trim());
+    this.tags = this.tags.map((tag) => tag.toLowerCase().trim());
     this.tags = [...new Set(this.tags)];
   }
 });
 
-eventSchema.pre("findOneAndUpdate", async function() {
+eventSchema.pre("findOneAndUpdate", async function () {
   const update = this.getUpdate() as any;
-  
-  if (update.currentParticipants !== undefined && update.maxParticipants !== undefined) {
+
+  if (
+    update.currentParticipants !== undefined &&
+    update.maxParticipants !== undefined
+  ) {
     if (update.currentParticipants >= update.maxParticipants) {
       update.status = "full";
-    } else if (update.status === "full" && update.currentParticipants < update.maxParticipants) {
+    } else if (
+      update.status === "full" &&
+      update.currentParticipants < update.maxParticipants
+    ) {
       update.status = "open";
     }
   }
-  
+
   if (update.date && new Date(update.date) < new Date()) {
     if (update.status === "open" || update.status === "full") {
       update.status = "completed";
@@ -253,53 +270,58 @@ eventSchema.pre("findOneAndUpdate", async function() {
   this.setUpdate(update);
 });
 
-eventSchema.methods.checkAndUpdateStatus = function() {
+eventSchema.methods.checkAndUpdateStatus = function () {
   if (this.currentParticipants >= this.maxParticipants) {
     this.status = "full";
-  } else if (this.status === "full" && this.currentParticipants < this.maxParticipants) {
+  } else if (
+    this.status === "full" &&
+    this.currentParticipants < this.maxParticipants
+  ) {
     this.status = "open";
   }
-  
+
   if (this.date < new Date()) {
     if (this.status === "open" || this.status === "full") {
       this.status = "completed";
     }
   }
-  
+
   return this;
 };
 
-eventSchema.statics.getAvailableEvents = function() {
+eventSchema.statics.getAvailableEvents = function () {
   return this.find({
     status: "open",
-    date: { $gte: new Date() }
+    date: { $gte: new Date() },
   }).sort({ date: 1 });
 };
 
-eventSchema.statics.getEventsByHost = function(hostId: mongoose.Types.ObjectId) {
+eventSchema.statics.getEventsByHost = function (
+  hostId: mongoose.Types.ObjectId
+) {
   return this.find({ host: hostId }).sort({ createdAt: -1 });
 };
 
-eventSchema.statics.getUpcomingEvents = function(limit = 10) {
+eventSchema.statics.getUpcomingEvents = function (limit = 10) {
   return this.find({
     status: "open",
-    date: { $gte: new Date() }
+    date: { $gte: new Date() },
   })
-  .sort({ date: 1 })
-  .limit(limit);
+    .sort({ date: 1 })
+    .limit(limit);
 };
 
-eventSchema.statics.searchEvents = function(searchTerm: string) {
+eventSchema.statics.searchEvents = function (searchTerm: string) {
   return this.find({
     $or: [
-      { title: { $regex: searchTerm, $options: 'i' } },
-      { description: { $regex: searchTerm, $options: 'i' } },
-      { location: { $regex: searchTerm, $options: 'i' } },
-      { category: { $regex: searchTerm, $options: 'i' } },
-      { tags: { $regex: searchTerm, $options: 'i' } }
+      { title: { $regex: searchTerm, $options: "i" } },
+      { description: { $regex: searchTerm, $options: "i" } },
+      { location: { $regex: searchTerm, $options: "i" } },
+      { category: { $regex: searchTerm, $options: "i" } },
+      { tags: { $regex: searchTerm, $options: "i" } },
     ],
     status: "open",
-    date: { $gte: new Date() }
+    date: { $gte: new Date() },
   }).sort({ date: 1 });
 };
 

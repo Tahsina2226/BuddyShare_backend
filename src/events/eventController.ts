@@ -58,7 +58,6 @@ const upload = multer({
 
 export const uploadEventImage = upload.single("image");
 
-// Helper function to get full URL
 const getFullUrl = (req: Request, path: string): string => {
   if (!path) return "";
   if (path.startsWith("http")) return path;
@@ -68,13 +67,11 @@ const getFullUrl = (req: Request, path: string): string => {
   return path;
 };
 
-// Helper function to transform event with full URLs
 const transformEventWithFullUrls = (req: Request, event: any) => {
   const eventObj = event.toObject ? event.toObject() : event;
   return {
     ...eventObj,
     image: getFullUrl(req, eventObj.image),
-    // Transform nested populated data if needed
     host:
       eventObj.host && typeof eventObj.host === "object"
         ? {
@@ -92,6 +89,28 @@ const transformEventWithFullUrls = (req: Request, event: any) => {
           : participant
       ) || [],
   };
+};
+
+const mapCategoryToSchema = (category: string): string => {
+  const categoryMap: Record<string, string> = {
+    Tech: "Technology",
+    tech: "Technology",
+    "Tech Event": "Technology",
+    "Technology Event": "Technology",
+    Coding: "Technology",
+    Programming: "Technology",
+    Software: "Technology",
+    IT: "Technology",
+    webdev: "Technology",
+    devops: "Technology",
+    ai: "Technology",
+    ml: "Technology",
+    blockchain: "Technology",
+    cybersecurity: "Technology",
+    cloud: "Technology",
+  };
+
+  return categoryMap[category] || category;
 };
 
 export const createEvent = asyncHandler(async (req: Request, res: Response) => {
@@ -118,9 +137,10 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
   let image = imageUrl;
   if (req.file) {
     const imagePath = `/uploads/events/${req.file.filename}`;
-    // Store full URL in database
     image = `${req.protocol}://${req.get("host")}${imagePath}`;
   }
+
+  const mappedCategory = mapCategoryToSchema(category);
 
   const event = await Event.create({
     title,
@@ -136,11 +156,11 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
     maxParticipants: parseInt(maxParticipants),
     currentParticipants: 0,
     joiningFee: parseFloat(joiningFee) || 0,
-    category,
+    category: mappedCategory,
     tags: tags
       ? Array.isArray(tags)
-        ? tags
-        : tags.split(",").map((t: string) => t.trim())
+        ? tags.map((t: string) => t.toLowerCase().trim())
+        : tags.split(",").map((t: string) => t.trim().toLowerCase())
       : [],
     image,
     status: "open",
@@ -162,7 +182,10 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
 
   const filter: any = {};
 
-  if (req.query.category) filter.category = req.query.category;
+  if (req.query.category) {
+    const mappedCategory = mapCategoryToSchema(req.query.category as string);
+    filter.category = mappedCategory;
+  }
   if (req.query.eventType) filter.eventType = req.query.eventType;
   if (req.query.location)
     filter.location = { $regex: req.query.location, $options: "i" };
@@ -248,10 +271,8 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
     const imagePath = `/uploads/events/${req.file.filename}`;
     image = `${req.protocol}://${req.get("host")}${imagePath}`;
 
-    // Delete old image if it's a local upload
     if (event.image && event.image.includes("/uploads/events/")) {
       try {
-        // Extract the filename from the full URL
         const oldImageFilename = event.image.split("/").pop();
         const oldImagePath = path.join(
           process.cwd(),
@@ -267,15 +288,23 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
     }
   }
 
-  const updateData = {
+  const updateData: any = {
     ...req.body,
-    ...(image && { image }),
-    ...(req.body.tags && {
-      tags: Array.isArray(req.body.tags)
-        ? req.body.tags
-        : req.body.tags.split(",").map((t: string) => t.trim()),
-    }),
   };
+
+  if (req.body.category) {
+    updateData.category = mapCategoryToSchema(req.body.category);
+  }
+
+  if (image) {
+    updateData.image = image;
+  }
+
+  if (req.body.tags) {
+    updateData.tags = Array.isArray(req.body.tags)
+      ? req.body.tags.map((t: string) => t.toLowerCase().trim())
+      : req.body.tags.split(",").map((t: string) => t.trim().toLowerCase());
+  }
 
   if (req.body.maxParticipants) {
     updateData.maxParticipants = parseInt(req.body.maxParticipants);
@@ -312,7 +341,6 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
     throw createError("Not authorized to delete this event", 403);
   }
 
-  // Delete associated image
   if (event.image && event.image.includes("/uploads/events/")) {
     try {
       const imageFilename = event.image.split("/").pop();
