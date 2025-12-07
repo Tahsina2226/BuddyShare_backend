@@ -12,6 +12,15 @@ export interface IUser extends Document {
   interests: string[];
   location: string;
   isVerified: boolean;
+  
+  // Review related fields
+  averageRating: number;
+  totalReviews: number;
+  reviews: mongoose.Types.ObjectId[];
+  
+  // Host specific fields
+  eventsHosted: number;
+  
   createdAt: Date;
   updatedAt: Date;
 
@@ -36,6 +45,28 @@ const userSchema = new Schema<IUser>(
     interests: [{ type: String, trim: true }],
     location: { type: String, required: true, trim: true },
     isVerified: { type: Boolean, default: false },
+    
+    // Review related fields
+    averageRating: {
+      type: Number,
+      default: 0,
+      min: 0,
+      max: 5,
+    },
+    totalReviews: {
+      type: Number,
+      default: 0,
+    },
+    reviews: [{
+      type: Schema.Types.ObjectId,
+      ref: "Review",
+    }],
+    
+    // Host specific fields
+    eventsHosted: {
+      type: Number,
+      default: 0,
+    },
   },
   { timestamps: true }
 );
@@ -44,6 +75,7 @@ const userSchema = new Schema<IUser>(
 userSchema.index({ email: 1 });
 userSchema.index({ location: 1 });
 userSchema.index({ interests: 1 });
+userSchema.index({ averageRating: -1 }); // For sorting hosts by rating
 
 // Pre-save hook (password hashing)
 userSchema.pre<IUser>("save", async function () {
@@ -66,5 +98,16 @@ userSchema.methods.toJSON = function () {
   delete obj.password;
   return obj;
 };
+
+// Virtual for formatted rating
+userSchema.virtual("formattedRating").get(function() {
+  return this.averageRating.toFixed(1);
+});
+
+// Virtual for star rating display
+userSchema.virtual("starRating").get(function() {
+  const stars = Math.round(this.averageRating);
+  return '★'.repeat(stars) + '☆'.repeat(5 - stars);
+});
 
 export default mongoose.model<IUser>("User", userSchema);

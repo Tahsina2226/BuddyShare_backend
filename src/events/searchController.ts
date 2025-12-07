@@ -10,7 +10,7 @@ const getQueryString = (value: any): string | undefined => {
   return value as string;
 };
 
-// @desc    Search events with advanced filters
+
 export const searchEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const {

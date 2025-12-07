@@ -138,23 +138,22 @@ export const removeParticipant = asyncHandler(
       throw createError("Event not found", 404);
     }
 
-    // Check if requester is the host
+   
     if (event.host.toString() !== (req as any).user.userId) {
       throw createError("Only host can remove participants", 403);
     }
 
-    // Check if user is a participant
+
     if (!event.participants.includes(userId as any)) {
       throw createError("User is not a participant of this event", 400);
     }
 
-    // Remove user from participants
     event.participants = event.participants.filter(
       (participantId) => participantId.toString() !== userId
     );
     event.currentParticipants = event.participants.length;
 
-    // Update status if event was full
+
     if (
       event.status === "full" &&
       event.currentParticipants < event.maxParticipants
@@ -190,7 +189,7 @@ export const canJoinEvent = asyncHandler(
       reasons: [] as string[],
     };
 
-    // Check all conditions
+
     if (event.status !== "open") {
       canJoin.canJoin = false;
       canJoin.reasons.push("Event is not open for joining");

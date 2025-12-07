@@ -19,6 +19,12 @@ export interface IEvent extends Document {
   tags: string[];
   hostName: string;
   hostEmail: string;
+
+  // Review related virtuals (will be populated)
+  hostReviews?: any[];
+  hostAverageRating?: number;
+  hostTotalReviews?: number;
+
   createdAt: Date;
   updatedAt: Date;
 }
@@ -183,6 +189,7 @@ const eventSchema = new Schema<IEvent>(
   }
 );
 
+// Indexes
 eventSchema.index({ eventType: 1 });
 eventSchema.index({ location: "text" });
 eventSchema.index({ date: 1 });
@@ -193,6 +200,7 @@ eventSchema.index({ tags: 1 });
 eventSchema.index({ createdAt: -1 });
 eventSchema.index({ joiningFee: 1 });
 
+// Virtuals
 eventSchema.virtual("isFull").get(function () {
   return this.currentParticipants >= this.maxParticipants;
 });
@@ -206,7 +214,12 @@ eventSchema.virtual("isPast").get(function () {
 });
 
 eventSchema.virtual("formattedDate").get(function () {
-  return this.date.toISOString().split("T")[0];
+  return this.date.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 });
 
 eventSchema.virtual("formattedTime").get(function () {
@@ -217,7 +230,49 @@ eventSchema.virtual("formattedTime").get(function () {
   return `${formattedHour}:${minutes} ${ampm}`;
 });
 
+// Host rating virtuals (for populating from User model)
+eventSchema.virtual("hostRating", {
+  ref: "User",
+  localField: "host",
+  foreignField: "_id",
+  justOne: true,
+  options: {
+    select: "name avatar averageRating totalReviews eventsHosted bio location",
+  },
+});
+
+// Event creation এ host এর eventsHosted increment করার middleware
+eventSchema.post("save", async function (doc: IEvent, next) {
+  try {
+    // Only increment if this is a new event
+    if (doc.isNew) {
+      await mongoose.model("User").findByIdAndUpdate(doc.host, {
+        $inc: { eventsHosted: 1 },
+      });
+    }
+    next();
+  } catch (error) {
+    console.error("Error updating eventsHosted:", error);
+    next(error as Error);
+  }
+});
+
+// Event deletion এ host এর eventsHosted decrement করার middleware
+eventSchema.post("findOneAndDelete", async function (doc: IEvent) {
+  try {
+    if (doc) {
+      await mongoose.model("User").findByIdAndUpdate(doc.host, {
+        $inc: { eventsHosted: -1 },
+      });
+    }
+  } catch (error) {
+    console.error("Error updating eventsHosted on event delete:", error);
+  }
+});
+
+// Event update এ participants count update করলে status check করার middleware
 eventSchema.pre("save", async function () {
+  // Update status based on participants
   if (this.currentParticipants >= this.maxParticipants) {
     this.status = "full";
   } else if (
@@ -227,12 +282,14 @@ eventSchema.pre("save", async function () {
     this.status = "open";
   }
 
+  // Update status based on date
   if (this.date < new Date()) {
     if (this.status === "open" || this.status === "full") {
       this.status = "completed";
     }
   }
 
+  // Clean up tags
   if (this.tags && this.tags.length > 0) {
     this.tags = this.tags.map((tag) => tag.toLowerCase().trim());
     this.tags = [...new Set(this.tags)];
@@ -242,6 +299,7 @@ eventSchema.pre("save", async function () {
 eventSchema.pre("findOneAndUpdate", async function () {
   const update = this.getUpdate() as any;
 
+  // Update status based on participants
   if (
     update.currentParticipants !== undefined &&
     update.maxParticipants !== undefined
@@ -256,12 +314,14 @@ eventSchema.pre("findOneAndUpdate", async function () {
     }
   }
 
+  // Update status based on date
   if (update.date && new Date(update.date) < new Date()) {
     if (update.status === "open" || update.status === "full") {
       update.status = "completed";
     }
   }
 
+  // Clean up tags
   if (update.tags && Array.isArray(update.tags)) {
     update.tags = update.tags.map((tag: string) => tag.toLowerCase().trim());
     update.tags = [...new Set(update.tags)];
@@ -270,6 +330,7 @@ eventSchema.pre("findOneAndUpdate", async function () {
   this.setUpdate(update);
 });
 
+// Methods
 eventSchema.methods.checkAndUpdateStatus = function () {
   if (this.currentParticipants >= this.maxParticipants) {
     this.status = "full";
@@ -289,17 +350,22 @@ eventSchema.methods.checkAndUpdateStatus = function () {
   return this;
 };
 
+// Statics
 eventSchema.statics.getAvailableEvents = function () {
   return this.find({
     status: "open",
     date: { $gte: new Date() },
-  }).sort({ date: 1 });
+  })
+    .populate("host", "name avatar averageRating totalReviews")
+    .sort({ date: 1 });
 };
 
 eventSchema.statics.getEventsByHost = function (
   hostId: mongoose.Types.ObjectId
 ) {
-  return this.find({ host: hostId }).sort({ createdAt: -1 });
+  return this.find({ host: hostId })
+    .populate("host", "name avatar averageRating totalReviews")
+    .sort({ createdAt: -1 });
 };
 
 eventSchema.statics.getUpcomingEvents = function (limit = 10) {
@@ -307,6 +373,7 @@ eventSchema.statics.getUpcomingEvents = function (limit = 10) {
     status: "open",
     date: { $gte: new Date() },
   })
+    .populate("host", "name avatar averageRating totalReviews")
     .sort({ date: 1 })
     .limit(limit);
 };
@@ -322,7 +389,21 @@ eventSchema.statics.searchEvents = function (searchTerm: string) {
     ],
     status: "open",
     date: { $gte: new Date() },
-  }).sort({ date: 1 });
+  })
+    .populate("host", "name avatar averageRating totalReviews")
+    .sort({ date: 1 });
+};
+
+// Helper method to get event with populated host rating
+eventSchema.statics.getEventWithHostRating = function (
+  eventId: mongoose.Types.ObjectId
+) {
+  return this.findById(eventId)
+    .populate(
+      "host",
+      "name avatar averageRating totalReviews eventsHosted bio location"
+    )
+    .populate("participants", "name avatar");
 };
 
 export default mongoose.model<IEvent>("Event", eventSchema);

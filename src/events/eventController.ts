@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import Event from "./event";
+import Event from "../events/event";
 import User from "../user/user";
 import { asyncHandler } from "../utils/asyncHandler";
 import { createError } from "../utils/errorResponse";
@@ -77,6 +77,9 @@ const transformEventWithFullUrls = (req: Request, event: any) => {
         ? {
             ...eventObj.host,
             avatar: getFullUrl(req, eventObj.host?.avatar || ""),
+            averageRating: eventObj.host.averageRating || 0,
+            totalReviews: eventObj.host.totalReviews || 0,
+            eventsHosted: eventObj.host.eventsHosted || 0,
           }
         : eventObj.host,
     participants:
@@ -109,7 +112,6 @@ const mapCategoryToSchema = (category: string): string => {
     cybersecurity: "Technology",
     cloud: "Technology",
   };
-
   return categoryMap[category] || category;
 };
 
@@ -167,7 +169,6 @@ export const createEvent = asyncHandler(async (req: Request, res: Response) => {
   });
 
   const eventWithFullUrls = transformEventWithFullUrls(req, event);
-
   res.status(201).json({
     success: true,
     message: "Event created successfully",
@@ -179,7 +180,6 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   const page = parseInt(req.query.page as string) || 1;
   const limit = parseInt(req.query.limit as string) || 10;
   const skip = (page - 1) * limit;
-
   const filter: any = {};
 
   if (req.query.category) {
@@ -209,13 +209,24 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
   if (req.query.sortBy === "participants") sort.currentParticipants = -1;
   if (!req.query.sortBy) sort.createdAt = -1;
 
-  const events = await Event.find(filter)
-    .populate("host", "name email avatar")
+  let events = await Event.find(filter)
+    .populate(
+      "host",
+      "name email avatar averageRating totalReviews eventsHosted"
+    )
     .skip(skip)
     .limit(limit)
     .sort(sort);
 
   const total = await Event.countDocuments(filter);
+
+  if (req.query.sortBy === "rating") {
+    events = events.sort((a: any, b: any) => {
+      const ratingA = a.host?.averageRating || 0;
+      const ratingB = b.host?.averageRating || 0;
+      return ratingB - ratingA;
+    });
+  }
 
   const eventsWithFullUrls = events.map((event) =>
     transformEventWithFullUrls(req, event)
@@ -237,7 +248,10 @@ export const getEvents = asyncHandler(async (req: Request, res: Response) => {
 
 export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id)
-    .populate("host", "name email avatar bio location")
+    .populate(
+      "host",
+      "name email avatar bio location averageRating totalReviews eventsHosted"
+    )
     .populate("participants", "name avatar");
 
   if (!event) {
@@ -245,7 +259,6 @@ export const getEvent = asyncHandler(async (req: Request, res: Response) => {
   }
 
   const eventWithFullUrls = transformEventWithFullUrls(req, event);
-
   res.json({
     success: true,
     data: { event: eventWithFullUrls },
@@ -254,15 +267,17 @@ export const getEvent = asyncHandler(async (req: Request, res: Response) => {
 
 export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
   let event = await Event.findById(req.params.id);
-
   if (!event) {
     throw createError("Event not found", 404);
   }
 
-  if (
-    event.host.toString() !== (req as any).user.userId &&
-    (req as any).user.role !== "admin"
-  ) {
+  const userId = (req as any).user.userId;
+  const userRole = (req as any).user.role;
+
+  const isHost = event.host.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isHost && !isAdmin) {
     throw createError("Not authorized to update this event", 403);
   }
 
@@ -316,10 +331,12 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
   event = await Event.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true,
-  }).populate("host", "name email avatar");
+  }).populate(
+    "host",
+    "name email avatar averageRating totalReviews eventsHosted"
+  );
 
   const eventWithFullUrls = transformEventWithFullUrls(req, event);
-
   res.json({
     success: true,
     message: "Event updated successfully",
@@ -329,15 +346,17 @@ export const updateEvent = asyncHandler(async (req: Request, res: Response) => {
 
 export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   const event = await Event.findById(req.params.id);
-
   if (!event) {
     throw createError("Event not found", 404);
   }
 
-  if (
-    event.host.toString() !== (req as any).user.userId &&
-    (req as any).user.role !== "admin"
-  ) {
+  const userId = (req as any).user.userId;
+  const userRole = (req as any).user.role;
+
+  const isHost = event.host.toString() === userId;
+  const isAdmin = userRole === "admin";
+
+  if (!isHost && !isAdmin) {
     throw createError("Not authorized to delete this event", 403);
   }
 
@@ -358,7 +377,6 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
   }
 
   await Event.findByIdAndDelete(req.params.id);
-
   res.json({
     success: true,
     message: "Event deleted successfully",
@@ -369,7 +387,7 @@ export const deleteEvent = asyncHandler(async (req: Request, res: Response) => {
 export const getEventsByHost = asyncHandler(
   async (req: Request, res: Response) => {
     const events = await Event.find({ host: req.params.hostId })
-      .populate("host", "name avatar")
+      .populate("host", "name avatar averageRating totalReviews eventsHosted")
       .sort({ date: 1 });
 
     const eventsWithFullUrls = events.map((event) =>
@@ -383,10 +401,75 @@ export const getEventsByHost = asyncHandler(
   }
 );
 
+export const getMyParticipatedEvents = asyncHandler(
+  async (req: Request, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 12;
+    const skip = (page - 1) * limit;
+    const status = (req.query.status as string) || "all";
+    const search = (req.query.search as string) || "";
+    const userId = (req as any).user.userId;
+
+    const filter: any = { participants: userId };
+
+    const now = new Date();
+    if (status === "upcoming") {
+      filter.date = { $gt: now };
+    } else if (status === "past") {
+      filter.date = { $lte: now };
+    }
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
+        { category: { $regex: search, $options: "i" } },
+        { location: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const total = await Event.countDocuments(filter);
+    const events = await Event.find(filter)
+      .populate(
+        "host",
+        "name email avatar averageRating totalReviews eventsHosted"
+      )
+      .skip(skip)
+      .limit(limit)
+      .sort({ date: 1 });
+
+    const eventsWithInfo = events.map((event) => {
+      const eventObj = event.toObject();
+      return {
+        ...eventObj,
+        isParticipant: true,
+        participationDate: event.createdAt,
+      };
+    });
+
+    const eventsWithFullUrls = eventsWithInfo.map((event) =>
+      transformEventWithFullUrls(req, event)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        events: eventsWithFullUrls,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+    });
+  }
+);
+
 export const getJoinedEvents = asyncHandler(
   async (req: Request, res: Response) => {
     const events = await Event.find({ participants: (req as any).user.userId })
-      .populate("host", "name avatar")
+      .populate("host", "name avatar averageRating totalReviews eventsHosted")
       .sort({ date: 1 });
 
     const eventsWithFullUrls = events.map((event) =>
@@ -435,3 +518,93 @@ export const uploadImage = asyncHandler(async (req: Request, res: Response) => {
     },
   });
 });
+
+export const getEventsByRating = asyncHandler(
+  async (req: Request, res: Response) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const minRating = parseFloat(req.query.minRating as string) || 0;
+
+    const highRatedHosts = await User.find({
+      averageRating: { $gte: minRating },
+      role: "host",
+    }).select("_id");
+
+    const hostIds = highRatedHosts.map((host) => host._id);
+
+    const events = await Event.find({
+      host: { $in: hostIds },
+      status: "open",
+      date: { $gte: new Date() },
+    })
+      .populate(
+        "host",
+        "name email avatar averageRating totalReviews eventsHosted"
+      )
+      .skip(skip)
+      .limit(limit)
+      .sort({ date: 1 });
+
+    const total = await Event.countDocuments({
+      host: { $in: hostIds },
+      status: "open",
+      date: { $gte: new Date() },
+    });
+
+    const eventsWithFullUrls = events.map((event) =>
+      transformEventWithFullUrls(req, event)
+    );
+
+    res.json({
+      success: true,
+      data: {
+        events: eventsWithFullUrls,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+    });
+  }
+);
+
+export const getTopRatedEvents = asyncHandler(
+  async (req: Request, res: Response) => {
+    const limit = parseInt(req.query.limit as string) || 5;
+
+    const topHosts = await User.find({
+      role: "host",
+      averageRating: { $gte: 4.0 },
+      totalReviews: { $gte: 5 },
+    })
+      .sort({ averageRating: -1 })
+      .limit(10)
+      .select("_id");
+
+    const hostIds = topHosts.map((host) => host._id);
+
+    const events = await Event.find({
+      host: { $in: hostIds },
+      status: "open",
+      date: { $gte: new Date() },
+    })
+      .populate(
+        "host",
+        "name email avatar averageRating totalReviews eventsHosted"
+      )
+      .limit(limit)
+      .sort({ date: 1 });
+
+    const eventsWithFullUrls = events.map((event) =>
+      transformEventWithFullUrls(req, event)
+    );
+
+    res.json({
+      success: true,
+      data: { events: eventsWithFullUrls },
+    });
+  }
+);
