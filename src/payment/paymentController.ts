@@ -38,6 +38,46 @@ export const createPaymentIntent = asyncHandler(async (req: Request, res: Respon
     throw createError('Event is full', 400);
   }
 
+  const existingPendingPayment = await Payment.findOne({
+    user: userId,
+    event: eventId,
+    status: 'pending'
+  });
+
+  if (existingPendingPayment) {
+    try {
+      const existingIntent = await stripe.paymentIntents.retrieve(
+        existingPendingPayment.stripePaymentIntentId
+      );
+      
+      if (existingIntent.status === 'requires_payment_method' || 
+          existingIntent.status === 'requires_confirmation' ||
+          existingIntent.status === 'requires_action') {
+        
+        return res.json({
+          success: true,
+          data: {
+            clientSecret: existingIntent.client_secret,
+            paymentId: existingPendingPayment._id,
+            amount: existingPendingPayment.amount,
+            event: {
+              id: event._id,
+              title: event.title,
+              date: event.date,
+              location: event.location
+            },
+            isExisting: true
+          }
+        });
+      }
+    } catch (error) {
+      console.log('Existing payment intent is invalid, creating new one');
+    }
+    
+    await Payment.findByIdAndDelete(existingPendingPayment._id);
+    console.log(`Deleted old pending payment: ${existingPendingPayment._id}`);
+  }
+
   const amount = Math.round(event.joiningFee * 100);
 
   let customerId: string;
@@ -200,40 +240,39 @@ export const confirmPayment = asyncHandler(async (req: Request, res: Response) =
 export const getPaymentHistory = asyncHandler(async (req: Request, res: Response) => {
   const userId = (req as any).user.userId;
   const page = parseInt(req.query.page as string) || 1;
-  const limit = parseInt(req.query.limit as string) || 10;
+  const limit = parseInt(req.query.limit as string) || 50;
   const skip = (page - 1) * limit;
 
   try {
-    const payments = await Payment.find({ user: userId })
+    const payments = await Payment.find({ 
+      user: userId,
+      status: { $in: ['succeeded', 'completed'] }
+    })
       .populate({
         path: 'event',
         select: 'title date time location hostName joiningFee status image category',
-        options: {
-          transform: (doc: any) => {
-            if (!doc) return null;
-            const eventObj = doc.toObject ? doc.toObject() : doc;
-            return {
-              ...eventObj,
-              formattedDate: eventObj.date ? new Date(eventObj.date).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              }) : null
-            };
-          }
-        }
       })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
+      .sort({ createdAt: -1 });
 
-    const total = await Payment.countDocuments({ user: userId });
+    const uniquePayments = [];
+    const seenKeys = new Set();
+    
+    for (const payment of payments) {
+      const key = `${payment.event._id}_${payment.amount}`;
+      
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniquePayments.push(payment);
+      }
+    }
+
+    const paginatedPayments = uniquePayments.slice(skip, skip + limit);
+    const total = uniquePayments.length;
 
     res.json({
       success: true,
       data: {
-        payments,
+        payments: paginatedPayments,
         pagination: {
           page,
           limit,
@@ -265,6 +304,67 @@ export const getPaymentDetails = asyncHandler(async (req: Request, res: Response
   res.json({
     success: true,
     data: { payment }
+  });
+});
+
+export const cleanupDuplicatePayments = asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.userId;
+
+  const allPayments = await Payment.find({ user: userId });
+  
+  const paymentsToKeep = [];
+  const paymentsToDelete = [];
+  const seenKeys = new Set();
+  
+  for (const payment of allPayments) {
+    const key = `${payment.event}_${payment.status}_${payment.amount}`;
+    
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      paymentsToKeep.push(payment);
+    } else {
+      paymentsToDelete.push(payment._id);
+    }
+  }
+  
+  if (paymentsToDelete.length > 0) {
+    await Payment.deleteMany({ _id: { $in: paymentsToDelete } });
+  }
+  
+  const cleanedPayments = await Payment.find({ user: userId })
+    .populate('event', 'title')
+    .sort({ createdAt: -1 });
+  
+  res.json({
+    success: true,
+    message: `Removed ${paymentsToDelete.length} duplicate payments`,
+    data: {
+      removed: paymentsToDelete.length,
+      kept: paymentsToKeep.length,
+      payments: cleanedPayments
+    }
+  });
+});
+
+export const deletePendingPayment = asyncHandler(async (req: Request, res: Response) => {
+  const paymentId = req.params.id;
+  const userId = (req as any).user.userId;
+
+  const payment = await Payment.findOne({
+    _id: paymentId,
+    user: userId,
+    status: 'pending'
+  });
+
+  if (!payment) {
+    throw createError('Pending payment not found or not authorized', 404);
+  }
+
+  await Payment.findByIdAndDelete(paymentId);
+
+  res.json({
+    success: true,
+    message: 'Pending payment deleted successfully'
   });
 });
 
@@ -414,4 +514,42 @@ export const handleWebhook = asyncHandler(async (req: Request, res: Response) =>
   }
 
   res.json({ received: true });
+});
+
+export const getSucceededPayments = asyncHandler(async (req: Request, res: Response) => {
+  const userId = (req as any).user.userId;
+
+  try {
+    const payments = await Payment.find({ 
+      user: userId,
+      status: { $in: ['succeeded', 'completed'] }
+    })
+      .populate({
+        path: 'event',
+        select: 'title date time location hostName joiningFee status image category',
+      })
+      .sort({ createdAt: -1 });
+
+    const uniquePayments = [];
+    const seenKeys = new Set();
+    
+    for (const payment of payments) {
+      const key = `${payment.event._id}_${payment.amount}`;
+      
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniquePayments.push(payment);
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        payments: uniquePayments
+      }
+    });
+  } catch (error: any) {
+    console.error('Error in getSucceededPayments:', error);
+    throw createError(`Failed to fetch succeeded payments: ${error.message}`, 500);
+  }
 });
