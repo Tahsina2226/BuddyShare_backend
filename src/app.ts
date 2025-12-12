@@ -6,7 +6,8 @@ import userRoutes from "./user/userRoute";
 import eventRoutes from "./events/eventRoute";
 import searchRoutes from "./events/searchRoute";
 import reviewRoutes from "./review/reviewRoutes";
-import paymentRoutes from './payment/paymentRoutes';
+import paymentRoutes from "./payment/paymentRoutes";
+import hostRoutes from "./host/host";
 const app = express();
 
 app.use(cors());
@@ -19,7 +20,6 @@ app.get("/", (req: Request, res: Response) => {
   res.send(`
     <h1>BuddyShare API</h1>
     <p>Welcome to your Events & Activities Backend</p>
-    
   `);
 });
 
@@ -35,6 +35,8 @@ app.get("/api/health", (req: Request, res: Response) => {
       events: "/api/events",
       search: "/api/search",
       reviews: "/api/reviews",
+      payments: "/api/payments",
+      host: "/api/host",
     },
   });
 });
@@ -44,7 +46,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/reviews", reviewRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/host", hostRoutes);
+
 app.use((req: Request, res: Response) => {
   res.status(404).json({
     success: false,
@@ -55,7 +59,9 @@ app.use((req: Request, res: Response) => {
       "/api/events",
       "/api/search",
       "/api/reviews",
-    ],
+      "/api/payments",
+      "/api/host",
+    ], // Added missing closing bracket for the array
   });
 });
 

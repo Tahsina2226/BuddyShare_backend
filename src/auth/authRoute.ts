@@ -1,18 +1,23 @@
 import express from "express";
-import { register, login, getMe, updateProfile } from "./authController";
-import { protect, AuthRequest } from "../middleware/auth";
+import {
+  register,
+  login,
+  googleAuth,
+  refreshToken,
+  getMe,
+  updateProfile,
+  logout,
+} from "./authController";
+import { protect } from "../middleware/auth";
 
 const router = express.Router();
 
 router.post("/register", register);
 router.post("/login", login);
-
-// Protected routes
-router.get("/me", protect as unknown as express.RequestHandler, getMe);
-router.put(
-  "/profile",
-  protect as unknown as express.RequestHandler,
-  updateProfile
-);
+router.post("/google", googleAuth);
+router.post("/refresh-token", refreshToken);
+router.get("/me", protect, getMe);
+router.put("/profile", protect, updateProfile);
+router.post("/logout", logout);
 
 export default router;

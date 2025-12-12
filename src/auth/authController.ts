@@ -1,10 +1,13 @@
 import { Request, Response } from "express";
+import jwt from "jsonwebtoken";
+import { OAuth2Client } from "google-auth-library";
 import User from "../user/user";
 import { generateToken } from "../utils/generateToken";
 import { asyncHandler } from "../utils/asyncHandler";
-import { AuthRequest } from "../middleware/auth"; // strongly typed request
+import { AuthRequest } from "../middleware/auth";
 
-// Register user
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 export const register = asyncHandler(async (req: Request, res: Response) => {
   const { name, email, password, role, location } = req.body;
 
@@ -41,7 +44,6 @@ export const register = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// Login user
 export const login = asyncHandler(async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -69,7 +71,151 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   });
 });
 
-// Get logged-in user info
+export const googleAuth = asyncHandler(async (req: Request, res: Response) => {
+  const { token: googleToken, email, name } = req.body;
+
+  if (!googleToken) {
+    res.status(400);
+    throw new Error("Google token is required");
+  }
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+    
+    const payload = ticket.getPayload();
+    if (!payload) {
+      res.status(401);
+      throw new Error("Invalid Google token");
+    }
+    
+    const googleId = payload.sub;
+    const userEmail = email || payload.email || "";
+    const userName = name || payload.name || "";
+
+    if (!userEmail) {
+      res.status(400);
+      throw new Error("Email is required for Google authentication");
+    }
+
+    let user = await User.findOne({
+      $or: [
+        { googleId },
+        { email: userEmail }
+      ]
+    });
+
+    if (!user) {
+      user = await User.create({
+        googleId,
+        email: userEmail,
+        name: userName,
+        role: 'user',
+        location: 'Unknown',
+        profileImage: payload.picture,
+        isGoogleUser: true
+      });
+    } else if (!user.googleId) {
+      user.googleId = googleId;
+      user.profileImage = payload.picture;
+      user.isGoogleUser = true;
+      await user.save();
+    }
+
+    const jwtToken = generateToken({
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role,
+    });
+
+    const userResponse = {
+      _id: user._id,
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      location: user.location,
+      profileImage: user.profileImage,
+      googleId: user.googleId,
+      isGoogleUser: user.isGoogleUser
+    };
+    
+    res.json({
+      success: true,
+      message: "Google authentication successful",
+      data: {
+        user: userResponse,
+        token: jwtToken
+      }
+    });
+
+  } catch (error: any) {
+    console.error("Google auth error:", error);
+    
+    if (error.message?.includes("Token used too late")) {
+      res.status(401).json({
+        success: false,
+        message: "Google token has expired. Please sign in again."
+      });
+    } else if (error.message?.includes("audience")) {
+      res.status(401).json({
+        success: false,
+        message: "Invalid Google OAuth client configuration"
+      });
+    } else {
+      res.status(401).json({
+        success: false,
+        message: error.message || "Google authentication failed"
+      });
+    }
+  }
+});
+
+export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    res.status(400);
+    throw new Error("Refresh token is required");
+  }
+
+  try {
+    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || "") as any;
+    
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      res.status(404);
+      throw new Error("User not found");
+    }
+
+    const newToken = generateToken({
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role,
+    });
+
+    const newRefreshToken = jwt.sign(
+      { userId: user._id.toString() },
+      process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET || "",
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token: newToken,
+        refreshToken: newRefreshToken
+      }
+    });
+
+  } catch (error) {
+    res.status(401);
+    throw new Error("Invalid or expired refresh token");
+  }
+});
+
 export const getMe = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
     res.status(401);
@@ -85,7 +231,6 @@ export const getMe = asyncHandler(async (req: AuthRequest, res: Response) => {
   res.json({ success: true, data: user });
 });
 
-// Update profile
 export const updateProfile = asyncHandler(
   async (req: AuthRequest, res: Response) => {
     if (!req.user) {
@@ -115,3 +260,10 @@ export const updateProfile = asyncHandler(
     });
   }
 );
+
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: "Logout successful"
+  });
+});

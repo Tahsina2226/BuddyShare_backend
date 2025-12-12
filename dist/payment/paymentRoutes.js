@@ -1,0 +1,20 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = __importDefault(require("express"));
+const paymentController_1 = require("./paymentController");
+const auth_1 = require("../middleware/auth");
+const router = express_1.default.Router();
+router.post("/webhook", express_1.default.raw({ type: "application/json" }), paymentController_1.handleWebhook);
+router.use(auth_1.protect);
+router.post("/create-intent", paymentController_1.createPaymentIntent);
+router.post("/confirm", paymentController_1.confirmPayment);
+router.post("/free-join", paymentController_1.freeEventJoin);
+router.get("/history", paymentController_1.getPaymentHistory);
+router.get("/cleanup-duplicates", paymentController_1.cleanupDuplicatePayments);
+router.get("/succeeded", paymentController_1.getSucceededPayments);
+router.delete("/pending/:id", paymentController_1.deletePendingPayment);
+router.get("/:id", paymentController_1.getPaymentDetails);
+exports.default = router;
