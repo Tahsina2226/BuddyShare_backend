@@ -1,9 +1,6 @@
 import mongoose, { Document, Schema } from "mongoose";
 import bcrypt from "bcryptjs";
 
-// ----------------------
-// IUser Interface
-// ----------------------
 export interface IUser extends Document {
   name: string;
   email: string;
@@ -48,9 +45,6 @@ export interface IUser extends Document {
   ): Promise<IUser>;
 }
 
-// ----------------------
-// Schema Definition
-// ----------------------
 const userSchema = new Schema<IUser>(
   {
     name: { type: String, required: true, trim: true, maxlength: 50 },
@@ -120,21 +114,15 @@ const userSchema = new Schema<IUser>(
   { timestamps: true }
 );
 
-// ----------------------
-// Indexes
-// ----------------------
 userSchema.index({ email: 1 });
+userSchema.index({ googleId: 1 }, { sparse: true });
 userSchema.index({ location: 1 });
 userSchema.index({ interests: 1 });
 userSchema.index({ averageRating: -1 });
-userSchema.index({ googleId: 1 });
 userSchema.index({ "hostRequest.status": 1 });
 userSchema.index({ "hostRequest.requestedAt": -1 });
 userSchema.index({ role: 1, "hostRequest.status": 1 });
 
-// ----------------------
-// Virtuals
-// ----------------------
 userSchema.virtual("formattedRating").get(function () {
   return this.averageRating.toFixed(1);
 });
@@ -172,19 +160,19 @@ userSchema.virtual("readableHostStatus").get(function () {
   return "Not a Host";
 });
 
-// ----------------------
-// Pre-Save Middleware (Mongoose 7+ Safe)
-// ----------------------
-userSchema.pre("save", async function () {
-  if (!this.isModified("password") || !this.password) return;
+// Solution 1: Use type assertion for the schema
+(userSchema as any).pre("save", async function (this: IUser, next: any) {
+  if (!this.isModified("password") || !this.password) return next();
 
-  const salt = await bcrypt.genSalt(12);
-  this.password = await bcrypt.hash(this.password, salt);
+  try {
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error: any) {
+    next(error);
+  }
 });
 
-// ----------------------
-// Methods
-// ----------------------
 userSchema.methods.comparePassword = async function (
   candidatePassword: string
 ) {
@@ -233,14 +221,10 @@ userSchema.methods.rejectHostRequest = function (
   return this.save();
 };
 
-// ----------------------
-// Remove Password From Response
-// ----------------------
 userSchema.methods.toJSON = function () {
   const obj = this.toObject();
   delete obj.password;
   return obj;
 };
 
-// ----------------------
 export default mongoose.model<IUser>("User", userSchema);

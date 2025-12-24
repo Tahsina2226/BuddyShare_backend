@@ -47,9 +47,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const mongoose_1 = __importStar(require("mongoose"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
-// ----------------------
-// Schema Definition
-// ----------------------
 const userSchema = new mongoose_1.Schema({
     name: { type: String, required: true, trim: true, maxlength: 50 },
     email: {
@@ -106,20 +103,14 @@ const userSchema = new mongoose_1.Schema({
         rejectionReason: { type: String, maxlength: 1000 },
     },
 }, { timestamps: true });
-// ----------------------
-// Indexes
-// ----------------------
 userSchema.index({ email: 1 });
+userSchema.index({ googleId: 1 }, { sparse: true });
 userSchema.index({ location: 1 });
 userSchema.index({ interests: 1 });
 userSchema.index({ averageRating: -1 });
-userSchema.index({ googleId: 1 });
 userSchema.index({ "hostRequest.status": 1 });
 userSchema.index({ "hostRequest.requestedAt": -1 });
 userSchema.index({ role: 1, "hostRequest.status": 1 });
-// ----------------------
-// Virtuals
-// ----------------------
 userSchema.virtual("formattedRating").get(function () {
     return this.averageRating.toFixed(1);
 });
@@ -156,20 +147,21 @@ userSchema.virtual("readableHostStatus").get(function () {
     }
     return "Not a Host";
 });
-// ----------------------
-// Pre-Save Middleware (Mongoose 7+ Safe)
-// ----------------------
-userSchema.pre("save", function () {
+// Solution 1: Use type assertion for the schema
+userSchema.pre("save", function (next) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!this.isModified("password") || !this.password)
-            return;
-        const salt = yield bcryptjs_1.default.genSalt(12);
-        this.password = yield bcryptjs_1.default.hash(this.password, salt);
+            return next();
+        try {
+            const salt = yield bcryptjs_1.default.genSalt(12);
+            this.password = yield bcryptjs_1.default.hash(this.password, salt);
+            next();
+        }
+        catch (error) {
+            next(error);
+        }
     });
 });
-// ----------------------
-// Methods
-// ----------------------
 userSchema.methods.comparePassword = function (candidatePassword) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!this.password)
@@ -190,13 +182,9 @@ userSchema.methods.rejectHostRequest = function (adminId, reason) {
     this.hostRequest = Object.assign(Object.assign({}, this.hostRequest), { status: "rejected", rejectedAt: new Date(), rejectedBy: adminId, rejectionReason: reason });
     return this.save();
 };
-// ----------------------
-// Remove Password From Response
-// ----------------------
 userSchema.methods.toJSON = function () {
     const obj = this.toObject();
     delete obj.password;
     return obj;
 };
-// ----------------------
 exports.default = mongoose_1.default.model("User", userSchema);

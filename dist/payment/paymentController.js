@@ -13,7 +13,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSucceededPayments = exports.handleWebhook = exports.freeEventJoin = exports.deletePendingPayment = exports.cleanupDuplicatePayments = exports.getPaymentDetails = exports.getPaymentHistory = exports.confirmPayment = exports.createPaymentIntent = void 0;
-const payment_1 = __importDefault(require("./payment"));
+const Payment_1 = __importDefault(require("./Payment"));
 const event_1 = __importDefault(require("../events/event"));
 const user_1 = __importDefault(require("../user/user"));
 const stripe_1 = require("../config/stripe");
@@ -41,7 +41,7 @@ exports.createPaymentIntent = (0, asyncHandler_1.asyncHandler)((req, res) => __a
     if (event.currentParticipants >= event.maxParticipants) {
         throw (0, errorResponse_1.createError)('Event is full', 400);
     }
-    const existingPendingPayment = yield payment_1.default.findOne({
+    const existingPendingPayment = yield Payment_1.default.findOne({
         user: userId,
         event: eventId,
         status: 'pending'
@@ -72,7 +72,7 @@ exports.createPaymentIntent = (0, asyncHandler_1.asyncHandler)((req, res) => __a
         catch (error) {
             console.log('Existing payment intent is invalid, creating new one');
         }
-        yield payment_1.default.findByIdAndDelete(existingPendingPayment._id);
+        yield Payment_1.default.findByIdAndDelete(existingPendingPayment._id);
         console.log(`Deleted old pending payment: ${existingPendingPayment._id}`);
     }
     const amount = Math.round(event.joiningFee * 100);
@@ -117,7 +117,7 @@ exports.createPaymentIntent = (0, asyncHandler_1.asyncHandler)((req, res) => __a
             enabled: true,
         },
     });
-    const payment = yield payment_1.default.create({
+    const payment = yield Payment_1.default.create({
         user: userId,
         event: event._id,
         amount: event.joiningFee,
@@ -169,7 +169,7 @@ exports.confirmPayment = (0, asyncHandler_1.asyncHandler)((req, res) => __awaite
     if (paymentIntent.status !== 'succeeded') {
         throw (0, errorResponse_1.createError)('Payment not completed', 400);
     }
-    const payment = yield payment_1.default.findOne({
+    const payment = yield Payment_1.default.findOne({
         stripePaymentIntentId: paymentIntentId,
         user: userId
     });
@@ -221,7 +221,7 @@ exports.getPaymentHistory = (0, asyncHandler_1.asyncHandler)((req, res) => __awa
     const limit = parseInt(req.query.limit) || 50;
     const skip = (page - 1) * limit;
     try {
-        const payments = yield payment_1.default.find({
+        const payments = yield Payment_1.default.find({
             user: userId,
             status: { $in: ['succeeded', 'completed'] }
         })
@@ -260,7 +260,7 @@ exports.getPaymentHistory = (0, asyncHandler_1.asyncHandler)((req, res) => __awa
     }
 }));
 exports.getPaymentDetails = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    const payment = yield payment_1.default.findById(req.params.id)
+    const payment = yield Payment_1.default.findById(req.params.id)
         .populate('event', 'title date location host')
         .populate('user', 'name email');
     if (!payment) {
@@ -277,7 +277,7 @@ exports.getPaymentDetails = (0, asyncHandler_1.asyncHandler)((req, res) => __awa
 }));
 exports.cleanupDuplicatePayments = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const userId = req.user.userId;
-    const allPayments = yield payment_1.default.find({ user: userId });
+    const allPayments = yield Payment_1.default.find({ user: userId });
     const paymentsToKeep = [];
     const paymentsToDelete = [];
     const seenKeys = new Set();
@@ -292,9 +292,9 @@ exports.cleanupDuplicatePayments = (0, asyncHandler_1.asyncHandler)((req, res) =
         }
     }
     if (paymentsToDelete.length > 0) {
-        yield payment_1.default.deleteMany({ _id: { $in: paymentsToDelete } });
+        yield Payment_1.default.deleteMany({ _id: { $in: paymentsToDelete } });
     }
-    const cleanedPayments = yield payment_1.default.find({ user: userId })
+    const cleanedPayments = yield Payment_1.default.find({ user: userId })
         .populate('event', 'title')
         .sort({ createdAt: -1 });
     res.json({
@@ -310,7 +310,7 @@ exports.cleanupDuplicatePayments = (0, asyncHandler_1.asyncHandler)((req, res) =
 exports.deletePendingPayment = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const paymentId = req.params.id;
     const userId = req.user.userId;
-    const payment = yield payment_1.default.findOne({
+    const payment = yield Payment_1.default.findOne({
         _id: paymentId,
         user: userId,
         status: 'pending'
@@ -318,7 +318,7 @@ exports.deletePendingPayment = (0, asyncHandler_1.asyncHandler)((req, res) => __
     if (!payment) {
         throw (0, errorResponse_1.createError)('Pending payment not found or not authorized', 404);
     }
-    yield payment_1.default.findByIdAndDelete(paymentId);
+    yield Payment_1.default.findByIdAndDelete(paymentId);
     res.json({
         success: true,
         message: 'Pending payment deleted successfully'
@@ -352,7 +352,7 @@ exports.freeEventJoin = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter
         event.status = 'full';
     }
     yield event.save();
-    const payment = yield payment_1.default.create({
+    const payment = yield Payment_1.default.create({
         user: userId,
         event: event._id,
         amount: 0,
@@ -403,7 +403,7 @@ exports.handleWebhook = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter
             catch (error) {
                 console.error('Error fetching charge for receipt URL:', error);
             }
-            yield payment_1.default.findOneAndUpdate({ stripePaymentIntentId: paymentIntent.id }, {
+            yield Payment_1.default.findOneAndUpdate({ stripePaymentIntentId: paymentIntent.id }, {
                 status: 'succeeded',
                 receiptUrl: receiptUrl
             });
@@ -411,13 +411,13 @@ exports.handleWebhook = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter
             break;
         case 'payment_intent.payment_failed':
             const failedPayment = event.data.object;
-            yield payment_1.default.findOneAndUpdate({ stripePaymentIntentId: failedPayment.id }, { status: 'failed' });
+            yield Payment_1.default.findOneAndUpdate({ stripePaymentIntentId: failedPayment.id }, { status: 'failed' });
             console.log(`Payment failed: ${failedPayment.id}`);
             break;
         case 'charge.succeeded':
             const charge = event.data.object;
             if (charge.payment_intent) {
-                yield payment_1.default.findOneAndUpdate({ stripePaymentIntentId: charge.payment_intent }, {
+                yield Payment_1.default.findOneAndUpdate({ stripePaymentIntentId: charge.payment_intent }, {
                     status: 'succeeded',
                     receiptUrl: charge.receipt_url || ''
                 });
@@ -427,7 +427,7 @@ exports.handleWebhook = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter
         case 'charge.failed':
             const failedCharge = event.data.object;
             if (failedCharge.payment_intent) {
-                yield payment_1.default.findOneAndUpdate({ stripePaymentIntentId: failedCharge.payment_intent }, { status: 'failed' });
+                yield Payment_1.default.findOneAndUpdate({ stripePaymentIntentId: failedCharge.payment_intent }, { status: 'failed' });
                 console.log(`Charge failed for payment intent: ${failedCharge.payment_intent}`);
             }
             break;
@@ -439,7 +439,7 @@ exports.handleWebhook = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter
 exports.getSucceededPayments = (0, asyncHandler_1.asyncHandler)((req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const userId = req.user.userId;
     try {
-        const payments = yield payment_1.default.find({
+        const payments = yield Payment_1.default.find({
             user: userId,
             status: { $in: ['succeeded', 'completed'] }
         })

@@ -1,4 +1,4 @@
-import mongoose, { Document, Schema } from "mongoose";
+import mongoose, { Document, Schema, UpdateQuery } from "mongoose";
 
 export interface IParticipation extends Document {
   userId: mongoose.Types.ObjectId;
@@ -63,7 +63,9 @@ participationSchema.post("save", async function (doc) {
 
 participationSchema.post("findOneAndUpdate", async function (doc) {
   try {
-    if (doc && this.getUpdate()?.status === "cancelled") {
+    const update = this.getUpdate() as UpdateQuery<IParticipation>;
+    
+    if (doc && update?.status === "cancelled") {
       await mongoose.model("Event").findByIdAndUpdate(doc.eventId, {
         $pull: { participants: doc.userId },
         $inc: { currentParticipants: -1 },

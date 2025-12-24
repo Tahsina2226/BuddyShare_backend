@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import mongoose from 'mongoose';
 
-import Payment from './payment';
+import Payment from './Payment';
 import Event from "../events/event";
 import User from "../user/user"
 import { stripe, CURRENCY } from '../config/stripe';

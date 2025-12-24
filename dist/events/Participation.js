@@ -94,9 +94,9 @@ participationSchema.post("save", function (doc) {
 });
 participationSchema.post("findOneAndUpdate", function (doc) {
     return __awaiter(this, void 0, void 0, function* () {
-        var _a;
         try {
-            if (doc && ((_a = this.getUpdate()) === null || _a === void 0 ? void 0 : _a.status) === "cancelled") {
+            const update = this.getUpdate();
+            if (doc && (update === null || update === void 0 ? void 0 : update.status) === "cancelled") {
                 yield mongoose_1.default.model("Event").findByIdAndUpdate(doc.eventId, {
                     $pull: { participants: doc.userId },
                     $inc: { currentParticipants: -1 },
