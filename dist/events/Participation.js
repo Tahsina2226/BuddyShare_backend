@@ -96,7 +96,16 @@ participationSchema.post("findOneAndUpdate", function (doc) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
             const update = this.getUpdate();
-            if (doc && (update === null || update === void 0 ? void 0 : update.status) === "cancelled") {
+            let status = null;
+            if (update && typeof update === 'object') {
+                if (update.$set && typeof update.$set === 'object' && 'status' in update.$set) {
+                    status = update.$set.status;
+                }
+                else if ('status' in update) {
+                    status = update.status;
+                }
+            }
+            if (doc && status === "cancelled") {
                 yield mongoose_1.default.model("Event").findByIdAndUpdate(doc.eventId, {
                     $pull: { participants: doc.userId },
                     $inc: { currentParticipants: -1 },

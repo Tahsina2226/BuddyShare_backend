@@ -435,3 +435,14 @@ System.Threading.Channels.ChannelClosedException: The channel has been closed.
 System.Threading.Channels.ChannelClosedException: The channel has been closed.
    at System.Threading.Channels.AsyncOperation`1.GetResult(Int16 token)
    at OmniSharp.Extensions.JsonRpc.OutputHandler.ProcessOutputStream(CancellationToken cancellationToken)
+2025-12-26 18:58:01.435 +06:00 [INF] This only goes file...
+2025-12-26 18:58:12.340 +06:00 [INF] Foo
+2025-12-26 19:00:44.893 +06:00 [DBG] Finding descriptors for initialize
+2025-12-26 19:00:51.822 +06:00 [DBG] Queueing "Serial":initialize:0 request for processing
+2025-12-26 19:00:52.464 +06:00 [DBG] Starting: Processing request initialize 0
+2025-12-26 19:00:52.471 +06:00 [DBG] Starting: Routing Request (0) initialize
+2025-12-26 19:00:52.634 +06:00 [VRB] Converting params for Request (0) initialize to OmniSharp.Extensions.LanguageServer.Protocol.Models.InternalInitializeParams
+2025-12-26 19:00:52.638 +06:00 [VRB] Converting params for Notification initialize to OmniSharp.Extensions.LanguageServer.Protocol.Models.InternalInitializeParams
+2025-12-26 19:01:09.740 +06:00 [VRB] Response value was OmniSharp.Extensions.LanguageServer.Protocol.Models.InitializeResult
+2025-12-26 19:01:09.950 +06:00 [DBG] Finished: Routing Request (0) initialize in 17477ms
+2025-12-26 19:01:09.953 +06:00 [DBG] Finished: Processing request initialize 0 in 17486ms

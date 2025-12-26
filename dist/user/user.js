@@ -103,8 +103,6 @@ const userSchema = new mongoose_1.Schema({
         rejectionReason: { type: String, maxlength: 1000 },
     },
 }, { timestamps: true });
-userSchema.index({ email: 1 });
-userSchema.index({ googleId: 1 }, { sparse: true });
 userSchema.index({ location: 1 });
 userSchema.index({ interests: 1 });
 userSchema.index({ averageRating: -1 });
@@ -147,7 +145,6 @@ userSchema.virtual("readableHostStatus").get(function () {
     }
     return "Not a Host";
 });
-// Solution 1: Use type assertion for the schema
 userSchema.pre("save", function (next) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!this.isModified("password") || !this.password)
